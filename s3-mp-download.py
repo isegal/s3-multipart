@@ -98,13 +98,6 @@ def main(src, dest, num_processes=2, split=32, force=False, verbose=False, quiet
         filename = split_rs.path.split('/')[-1]
         dest = os.path.join(dest, filename)
 
-    if os.path.exists(dest):
-        if force:
-            os.remove(dest)
-        else:
-            raise ValueError("Destination file '%s' exists, specify -f to"
-                             " overwrite" % dest)
-
     # Split out the bucket and the key
     s3 = boto.connect_s3()
     s3 = boto.connect_s3(calling_format=OrdinaryCallingFormat())
@@ -115,7 +108,27 @@ def main(src, dest, num_processes=2, split=32, force=False, verbose=False, quiet
         raise ValueError("'%s' is not a valid bucket" % split_rs.netloc)
     key = bucket.get_key(split_rs.path)
     if key is None:
-      raise ValueError("'%s' does not exist." % split_rs.path)
+        lst = bucket.list(prefix=split_rs.path[1:])
+
+        for it in lst:
+            dirname = os.path.dirname(it.name)
+            destdir = os.path.normpath(dest + '/' + dirname)
+            logging.debug("DESTDIR: " + destdir)
+            destfile = os.path.normpath(dest + '/' + it.name)
+            logging.debug("DESTFILE: " + destfile)
+            if not os.path.isdir(destdir):
+                os.makedirs(destdir)
+            do_download(s3, bucket, it, destfile, split, num_processes, secure, max_tries, force)
+    else:
+        do_download(s3, bucket, key, dest, split, num_processes, secure, max_tries, force)
+
+def do_download(s3, bucket, key, dest, split, num_processes, secure, max_tries, force):
+    if os.path.exists(dest):
+        if force:
+            os.remove(dest)
+        else:
+            raise ValueError("Destination file '%s' exists, specify -f to"
+                             " overwrite" % dest)
 
     # Determine the total size and calculate byte ranges
     resp = s3.make_request("HEAD", bucket=bucket, key=key)
